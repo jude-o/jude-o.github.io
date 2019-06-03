@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard of screen time points">
+
+    <title>Screen Time Dashboard</title>
+
+    <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/pure-min.css">
+    <link href='https://fonts.googleapis.com/css?family=Oxygen:400,300,700' rel='stylesheet' type='text/css'>
+
+    <!--[if lte IE 8]>
+        <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/grids-responsive-old-ie-min.css">
+    <![endif]-->
+    <!--[if gt IE 8]><!-->
+        <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/grids-responsive-min.css">
+    <!--<![endif]-->
+
+    <!--[if lte IE 8]>
+        <link rel="stylesheet" href="css/layouts/pricing-old-ie.css">
+    <![endif]-->
+    <!--[if gt IE 8]><!-->
+        <link rel="stylesheet" href="css/dashboard.css">
+    <!--<![endif]-->
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript">
+        // TODO: Someday use JSON instead of CSV, like http://kovalent.co/blog/google-docs-as-a-backend/
+        var point_data = null;
+        var activity_data = null;
+
+        var nice_day_format = d3.time.format("%B %e ");
+        var nice_time_format = d3.time.format("%_I:%M %p");
+
+        // Load point data
+        d3.json("https://spreadsheets.google.com/feeds/list/1lSLBZuVqn-fxRFqqMtSd4H-vPhW9_vCDgfZAV5qtqLA/1/public/full?alt=json", function(data) {
+            data['feed']['entry'].forEach(function(d) {
+                earn_spend = d["gsx$didyouearnpointsorspendpoints"]["$t"]
+                amount = +d["gsx$howmanypointsdidyouearnoruse"]["$t"]
+                if (earn_spend == "Spend points"){ 
+                    amount = -amount
+                    };
+
+                d.timestamp = d3.time.format("%m/%d/%Y %H:%M:%S").parse(d["gsx$timestamp"]["$t"]);
+                d.kid = d["gsx$whoareyou"]["$t"];
+                d.amount = amount;
+            })
+
+            point_data = data['feed']['entry'];  // Assign data now that it's been collected
+            point_data.sort(function(a,b) { return b.timestamp - a.timestamp; });
+            update_points()  // Use the data in a function
+        });
+
+        // Display point data on the page
+        function update_points() {
+            // Get the total number of points for each kid
+            // nest() makes a nested array based on the key (essentially dplyr::group_by())
+            // rollup() runs a function on each chunk of the array (essentially dplyr::summarise())
+            var kids_sum = d3.nest()
+                .key(function(d) { return d.kid; })
+                .rollup(function(v) { return d3.sum(v, function(d) { return d.amount; }); })
+                .map(point_data);
+
+            // d3.select("#debug").text(JSON.stringify(kids_sum));
+            // d3.select("#debug").text(JSON.stringify(point_data));
+
+            // Add point totals to the page
+            d3.select("#atticus-points").text(kids_sum["Atticus"]);
+            d3.select("#maxwell-points").text(kids_sum["Maxwell"]);
+
+            // Append history table
+            function add_history_table(kid_data, table_class, kid_name) {
+                var history_for_kid = kid_data.filter(function(d) { return d.kid == kid_name }).slice(0, 9)
+
+                // Append table
+                var table = d3.select(table_class).append("table")
+                        .attr("class", "pure-table pure-table-horizontal pure-table-striped"),
+                    thead = table.append("thead"),
+                    tbody = table.append("tbody");
+
+                // Add headers
+                thead.append("tr").selectAll("th")
+                    .data(["Day", "Time", "Amount"]).enter()
+                    .append("th")
+                        .text(function(column) { return column; });
+
+                // Add rows
+                var rows = tbody.selectAll('tr')
+                    .data(history_for_kid).enter()
+                    .append('tr');
+
+                // Populate columns
+                rows.append('td').html(function(m) { return nice_day_format(m.timestamp); });
+                rows.append('td').html(function(m) { return nice_time_format(m.timestamp); });
+                rows.append('td').html(function(m) { return m.amount; });
+            }
+
+            add_history_table(point_data, "#atticus-history", "Atticus")
+            add_history_table(point_data, "#maxwell-history", "Maxwell")
+        }
+
+        // Load activity data
+        d3.json("https://spreadsheets.google.com/feeds/list/1Pv1CTuWoGZivy38Igkz4RCb4dF2PiIajaOSV67wafHU/1/public/full?alt=json", function(data) {
+            data['feed']['entry'].forEach(function(d) {
+                d.activity = d["gsx$activity"]["$t"];
+                d.points = d["gsx$points"]["$t"];
+            })
+
+            activity_data = data['feed']['entry'];  // Assign data now that it's been collected
+            activity_data.sort(function(a,b) { return b.points - a.points; });
+            update_activities()  // Use the data in a function
+        });
+
+        // Display activities on the page
+        function update_activities() {
+            // Append table
+            var table = d3.select("#activities-table").append("table")
+                    .attr("class", "pure-table pure-table-horizontal pure-table-striped"),
+                thead = table.append("thead"),
+                tbody = table.append("tbody");
+
+            // Add headers
+            thead.append("tr").selectAll("th")
+                .data(["Activity", "Points"]).enter()
+                .append("th")
+                    .text(function(column) { return column; });
+
+            // Add rows
+            var rows = tbody.selectAll('tr')
+                .data(activity_data).enter()
+                .append('tr');
+
+            // Populate columns
+            rows.append('td').html(function(m) { return m.activity; });
+            rows.append('td').html(function(m) { return m.points; });
+        }
+    </script>
+    <script>
+        $(document).ready(function(){
+            $("#show-atticus-history").click(function(){
+                $("#atticus-history").slideToggle("slow");
+            });
+            $("#show-maxwell-history").click(function(){
+                $("#maxwell-history").slideToggle("slow");
+            });
+        });
+    </script>
+</head>
+<body>
+
+<div class="content">
+    <div class="points pure-g">
+        <div class="pure-u-1 section-header">
+            <h2>Current points</h2>
+        </div>
+        <div class="pure-u-1 pure-u-md-1-2">
+            <div class="kid-wrapper">
+                <div class="kid-info atticus">
+                    <h2>Atticus</h2>
+                    <span id="atticus-points" class="kid-points"></span>
+                </div>
+                <div id="show-atticus-history" class="show-history"></div>
+                <div id="atticus-history"></div>
+            </div>
+        </div>
+
+        <div class="pure-u-1 pure-u-md-1-2">
+            <div class="kid-wrapper">
+                <div class="kid-info maxwell">
+                    <h2>Maxwell</h2>
+                    <span id="maxwell-points" class="kid-points"></span>
+                </div>
+                <div id="show-maxwell-history" class="show-history"></div>
+                <div id="maxwell-history"></div>
+            </div>
+        </div>
+    </div> <!-- end points -->
+
+    <div class="activities pure-g">
+        <div class="pure-u-1 section-header">
+            <h2>How to earn points</h2>
+        </div>
+        <div class="pure-u-1 button-wrapper">
+            <a class="pure-button button-form" target="_blank" href="https://docs.google.com/forms/d/e/1FAIpQLSchXuDWDpfmfdW-0cHVGqzB_eLERxbW2cGPIMoFJ0ehi-FdwA/viewform">Record points that you earn or spend</a>
+        </div>
+        <div class="pure-u-1 activities-wrapper">
+            <div id="activities-table" class="pure-u-1 activities-table"></div>
+        </div>
+    </div> <!-- end activities -->
+
+    <div class="pure-g">
+        <div class="pure-u-1">
+            <pre><code id="debug"></code></pre>
+        </div>
+    </div>
+</div> <!-- end content -->
+
+</body>
+</html>
